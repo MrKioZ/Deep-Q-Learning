@@ -1,0 +1,180 @@
+import gym
+import math
+import random
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+from collections import namedtuple
+from itertools import count
+from PIL import Image
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torchvision.transforms as T
+
+
+env = gym.make('CartPole-v0').unwrapped
+
+# set up matplotlib
+is_ipython = 'inline' in matplotlib.get_backend()
+if is_ipython:
+    from IPython import display
+
+plt.ion()
+
+# if gpu is to be used
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class DQN(nn.Module): #Deep Q Network
+
+    def __init__(self, h, w, outputs):
+        super().__init__()
+
+        self.fc1 = nn.Linear(in_features=h*w*3,out_features=24) #the Three in the in-features represent the colors channels
+        self.fc2 = nn.Linear(in_features=24, out_features=32)
+        self.out = nn.Linear(in_features=32, out_features=2)
+
+    # Called with either one element to determine next action, or a batch
+    # during optimization. Returns tensor([[left0exp,right0exp]...]).
+    def forward(self, t):
+        t = t.flatten(start_dim=1)
+        t = F.relu(self.fc1(t))
+        t = F.relu(self.fc2(t))
+        t = self.out(t)
+        return t
+
+#Experience Class
+Experience = namedtuple(
+    'Experience',
+    ('state', 'action', 'next_state', 'reward')
+)
+
+e = Experience(2,3,1,4)
+
+
+class ReplayMemory(object):
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.memory = []
+        self.position = 0
+
+    def push(self, experience):
+        """Saves a transition."""
+        if len(self.memory) < self.capacity:
+            self.memory.append(experience)
+        else:
+            self.memory[self.push_count % self.capacity] = experience
+        self.push_count += 1
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
+
+    def can_provide_sample(self):
+        return len(self.memory) >= batch_size
+
+class EpsilonGreedyStartegy(self):
+    def __init__(self, start, end, decay):
+        self.start = start
+        self.end = end
+        self.decay = decay
+
+    def get_exploration_rate(self, current_step):
+        return self.end + (self.start - self.end) * \
+            math.exp(-1. * current_step * self.decay)
+
+class Agent():
+    def __init__(self, startegy, num_actions, device):
+        self.current_step = 0
+        self.startegy = startegy
+        self.num_actions = num_actions
+        self.device = device
+    def select_action(self, state, policy_net):
+        rate = strategy.get_exploration_rate(self.current_step)
+        self.current_step += 1
+
+    if rate > random.random():
+        return random.randrange(self.num_actions) #explore
+    else:
+        with torch.nograd(): #for reference and not training
+            return policy_net(state).argmax(dim=1).to(device) #Exploit
+
+class CartPoleEnvManager():
+
+    def __init__(self, device):
+        self.device = device
+        self.env = gym.make('CartPole-v0').unwrapped
+        self.env.reset()
+        self.current_screen = None
+        self.done False
+
+    def reset(self):
+        self.env.reset()
+        self.curernt_screen = None
+
+    def close(self):
+        self.env.close()
+
+    def render(self, mode='human'):
+        return self.env.render(mode)
+
+    def num_action_available(self):
+        return self.env.action_space.n
+
+    def take_action(self, action):
+        _, reward, self.done, _ = self.env.step(action.item())
+        return torch.tensor([reward], device=self.device)
+
+    def just_starting(self):
+        return self.current_screen is None
+
+    def get_state(self):
+        if self.just_starting() or self.done:
+            self.current_screen = self.get_processed_screen()
+            black_screen = torch.zeros_like(self.current_screen)
+            return black_screen
+        else:
+            s1 = self.current_screen
+            s2 = self.get_processed_screen()
+            self.current_screen = s2
+            return s1 - s2
+
+    def get_screen_height(self):
+        screen = self.get_processed_screen()
+        return screen.shape[2]
+
+    def get_screen_width(self):
+        screen = self.get_processed_screen()
+        return screen.shape[3]
+
+    def get_processed_screen(self):
+        screen = self.render('rgb_array').transpose((2,0,1))
+        screen = self.crop_screen(screen)
+        return self.transforms_screen_data(screen)
+
+    def crop_screen(self, screen):
+        screen_height = screen.shape[1]
+
+        #Strip off top and bottom
+        top = int(screen_height * 0.4)
+        bottom = int(screen_height * 0.8)
+        screen = screen[:, top:bottom, :]
+        return screen
+
+    def transforms_screen_data(self, screen):
+        screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
+        screen = torch.from_numpy(screen)
+
+        #Use torchvision package to compose image transforms
+        resize = T.Compose([
+            T.ToPILImage(),
+            T.Resize(40, 90),
+            T.ToTensor()
+        ])
+
+        return resize(screen).unsqueeze(0).to(self.device)
